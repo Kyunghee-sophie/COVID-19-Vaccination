@@ -1,0 +1,1068 @@
+---
+title: "An Ecological Model of COVID-19 Space-Time Disparities in Vaccination Rates for Texas"
+author: "[Michael Tiefelsdorf](mailto:tiefelsdorf@utdallas.edu) & [Kyunghee Rhyu](mailto:kyunghee.rhyu@utdallas.edu) --- The University of Texas at Dallas "
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+    number_sections: yes
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(TexMix); library(car); library(effects)
+library(spdep); library(spatialreg)
+library(INLA); library(INLABMA); library(ggplot2)
+library(parallel); library(compiler)
+options(mc.cores=16)
+load("C://Users//kxr170000//OneDrive - The University of Texas at Dallas//COVID-19//[VaxTex]R coding//RData//VaxTXCntyWeekW05toW87.RData")
+load("C://Users//kxr170000//OneDrive - The University of Texas at Dallas//COVID-19//[VaxTex]R coding//RData//CumWeeklyTXVaxRates.RData")
+# setwd("E:\\PJ2022\\Montreal")
+# knitr::purl("E:\\PJ2022\\Montreal\\TXSpaceTimeVaxModelW15toW55.Rmd", documentation = 0)
+```
+
+```{r plotFixParmsTrajectory, echo=FALSE, include=FALSE}
+plotFixParmsTrajectory <- function(parms, weeks=15:55){
+  iSteps <- length(weeks)
+  ## Intercept
+  i <- 0
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Intercept") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Intercept") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))   
+  plot(p)
+  
+  ## rural.urban
+  i <- 1
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.3,0.8) +
+    xlab("rural.urban") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Urban in Rural Counties Parameters of Factor URBRURAL") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p)
+  
+  ## metro.fringe
+  i <- 2
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.3,0.8) +
+    xlab("metro.fringe") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Fringe Metropolitan Parameters of Factor URBRURAL") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p)
+  ## metro.core
+  i <- 3
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.3,0.8) +
+    xlab("metro.core") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Core Metropolitan Parameters of Factor URBRURAL") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## metro.suburb
+  i <- 4
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.3,0.8) +
+    xlab("metro.suburb") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Suburban Metropolitan Parameters of Factor URBRURAL") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## Fatality Rate
+  i <- 5
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Fatality Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Fatality Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## Hispanic Rate
+  i <- 6
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Hispanic Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Hispanic Origin Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## Part Black Rate
+  i <- 7
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Part Black Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Part Black Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## Median Age
+  i <- 8
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Median Age") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Median Age Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## Democratic Votes
+  i <- 9
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Democratic Vote Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific Vote Demoncratic Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## College Degree Rate
+  i <- 10
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("College Degree Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific College Degree Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## In-Prison Rate
+  i <- 11
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("In-Prison Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific In-Prison Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+  
+  ## In-Army Rate
+  i <- 12
+  p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+    geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("In-Army Rate") + ylab ("Week") +
+    geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+    geom_vline (xintercept = 0, linetype = 2) +
+    ggtitle("Time-specific In-Army Rate Parameters") +
+    theme(plot.title = element_text(hjust=0.5)) +
+    scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=4))
+  plot(p) 
+}
+```
+
+```{r carSA, echo=FALSE, include=FALSE}
+carSA <- function(
+  cmd = c("graph", "Q", "mu", "initial", "log.norm.const",
+    "log.prior", "quit"), theta = NULL) {
+  #Internal function
+  interpret.theta <- function() {
+    return(
+      list(prec = exp(theta[1L]),
+      rho = 1 / (1 + exp(-theta[2L])))
+    )
+  }
+
+  graph <- function(){
+    require(Matrix)
+    return(Diagonal(nrow(W), x = 1) + W)
+  }
+
+  Q <- function() {
+    require(Matrix)
+    param <- interpret.theta()
+    return(param$prec * (Diagonal(nrow(W), x = 1) - param$rho * W) )
+  }
+
+  mu <- function()
+  {
+    return(numeric(0))
+  }
+
+  log.norm.const <- function() {
+    return(numeric(0))
+  }
+
+  log.prior <- function() {
+    param = interpret.theta()
+    res <- dgamma(param$prec, 0.005, 0.005, log = TRUE) + log(param$prec) +
+      log(1) + log(param$rho) + log(1 - param$rho) 
+    return(res)
+  }
+
+  initial <- function() {
+    return(c(0, 0))
+  }
+
+  quit <- function() {
+    return(invisible())
+  }
+
+  res <- do.call(match.arg(cmd), args = list())
+  return(res)
+} ## end::carSA
+
+```
+
+# Abstract {.unnumbered}
+
+Although being fully vaccinated is one of the most effective means to prevent the spread of COVID-19 as well as to mitigate any infection complications, vaccination coverage lags behind the goal of developing herd immunity with noticeable spatial and temporal inequalities. The propensity to become fully vaccinated may be caused by local and temporal variations of vaccine hesitancy and acceptance and to a lesser degree accessibility issues. Relevant risk as well as protective factors were drawn from the cultural, political, public health, demographic, risk perception, regional, and socio-economic domains in each county in Texas. Furthermore, control variables linked to specific demographic groups are incorporated into this study. These spatial disparities are affected by the availability of vaccines, vaccination eligibility age, and mutant waves of COVID-19 variants.
+
+The main objectives of this study are [a] to identify the underlying determinants of the space-time vaccination disparities and [b] to evaluate any shifts in the relevance of the risk factors over time. An ecological Bayesian mixed effects model, which accounts simultaneously for the interaction among both the temporal and spatial dimensions, is build. The weekly vaccination prevalence -- having received at least two rounds of inoculations -- for the eligible population residing in the 254 counties of Texas is evaluated within the time-frame from mid-April, 2021, to end of January, 2022. The results of the model indicate that a conditional autoregressive spatial random effect as well as a first order autoregressive serial random effect specification -- due to the cumulative nature of the target variable -- are highly relevant. Furthermore, due to the inherent spatial heterogeneity of Texas, vaccine acceptance rates can be linked to local factors with an evolving trajectory during the 41 weeks of the analysis period.
+
+Results of a [detailed vaccination study](http://www.spatialfiltering.com/ThinkR/Downloads/VacModelTX.html) for mid-May 2021 are available.
+
+# Introduction
+
+This research tells a powerful story of the successes and failures of the COVID-19 vaccination campaign in Texas from mid-April 2021 to the end of January 2022. This is a story in which millions of lives have been saved thanks to the availability of COVID-19 vaccines. However, these wins were rather selective with clear spatial-temporal disparities.
+
+While general research on vaccination acceptance and hesitancy is plentiful (Gowda & Dempsey, 2013; Larson et al., 2014; Siddiqui et al., 2013; Thomson et al., 2016), specific research on COVID-19 vaccination preferences is still scarce. Furthermore, findings of vaccination acceptance research cannot necessarily be generalized to COVID-19 because of COVID-19's acute epidemic nature and the unfortunate proliveration of misinformation surrounding both the epidemic and vaccination. Most vaccination preference studies take a bivariate perspective rather than looking at partial effects by controlling for other risk factors. These studies furthermore ignore any regional differences -- a critical component of any disease mapping study -- and trajectories of vaccine preferences over time. This study aims to overcome these generalizations over space and time by adopting an ecological regression perspective. Since the current study uses spatially aggregated information, its findings cannot necessarily be generalized from population-level associations to individual-level behaviors.
+
+The figure below highlights the timeline by weeks from December 2020 to May 2022 of primary infection waves with their associated COVID-19 mutations, the role-out of vaccines and their boosters, the eligible age groups, and other key events.
+
+![COVID-19 Vaccination Timeline](VaxTimeLine.png)
+
+Universal reasons for vaccine hesitancy center around the perceived risks associated with the exposure to vaccines, the perceived lack of efficacy, socioeconomic, gender, culture, religious faith, and deficiency in knowledge (Marti et al., 2017; Quinn et al., 2019). The aforementioned determinants of vaccine acceptance also can be employed for COVID-19. In addition, the low confidence in the COVID-19 vaccines centered around the innovative use of messenger ribonucleic acid (mRNA) technology compared to the traditional vaccines, the short timeframe to evaluate the safety and efficiency of the novel COVID-19 vaccines and their rapid rollout (Mollalo & Tatar, 2021; Soares et al., 2021).
+
+This study proceeds as follows: It first introduces and scrutinizes the used data, followed by a discussion of the adopted modeling strategy and setup. Next, the resulting distributions of the random space and time effects are discussed as well as [d] the trajectories of the fixed effects risk factors. A concluding discussion and outlook close this space-time Bayesian analysis of cumulative COVID-19 vaccination rates in Texas.
+
+# Data
+
+COVID-19 and vaccine-related data at the county level, from mid-April 2021 to the end of January 2022, were compiled by the [Texas Department of Health and Human Services](https://dshs.texas.gov/coronavirus/additionaldata/) (DSHS) at their COVID-19 portal. These data are geo-coded by county based on the residential addresses that persons seeking COVID-19 vaccinations provided to their health care providers, pharmacists, vaccination centers etc. The DSHS released the cumulative vaccination counts, broken down by the vaccination and booster status, as well as COVID-19 morbidity and mortality statistics on a daily basis. Furthermore, they provided underlying estimates for the different populations at risks, broken down by the eligible age groups, which were obtained from U.S. Census Bureau projections. Demographic and socioeconomic statistics at the county level were retrieved from the 5-years American Community Survey (ACS). Additionally, potential vaccination determinants were obtained: [a] The Texas Department of Criminal Justice (DCJ) keeps statistics of the number of persons incarcerated at each correctional site, [b] the political preferences were obtained from the 2020 Presidential Election outcomes and [c] religious affiliation was obtain from the 2010 Religion Census.
+
+## Selection of Study Period
+
+The figure below shows the weekly *cumulative* vaccination rates in Texas using the population at risk of 5 years and older as the denominator. The cumulative vaccination rate is initially accelerating while later on it tempers out and plateaus at around 63% by March 2022. A Weibull distribution model describes this differential increase in the cumulative vaccination rates well. This study starts analyzing the cumulative vaccination rates at week 15 (mid-April 2021). This start date was chosen because [a] in April 2021 the vaccine became more-or-less ubiquitously available across Texas, [b] adolescents became eligible to receive the vaccine, and [c] after some initial reporting uncertainties predominately in smaller counties prior to week 15 the DSHA vaccination reporting system stabilized for all counties in Texas.
+
+Despite initially only adolescents and beyond were eligible while toward the end of the study period persons 5 years and older were eligible, for all weeks a *population at risk of 5 years and older* was used throughout this study. This kept the cumulative vaccination rates comparable across time and avoided discontinuities. Furthermore, from an infectious disease epidemiological perspective the approach toward herd immunity for the global population is of interest.
+
+```{r cumCovid, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+plot(weekVaxRate~weekFac, data=week, xlab="Week", ylab="Vaccination Rate",
+     main="Cumulative Weekly Vaccination Rates for TX (Feb 2021 to Aug 2022)\nWeibull Growth Model Superimposed")
+weib.mod <- nls(weekVaxRate~SSweibull(week, asym, drop, lrc, pwr), data=week)
+#summary(weig.mod)
+lines(week$weekFac, predict(weib.mod), col="red",lwd=2)
+abline(v=c(15-4,55-4), lty=5, col="red")
+```
+
+This study terminated at Week 55 (end of January 2022); thus it comprised in total of 41 weekly cumulative vaccination rates by the 254 counties in Texas. This end date was chosen for technical and conceptual reasons. By week 55 the vaccination rates started to plateau; thus in most counties variability across time wasn't any longer sufficient, which led to unstable estimates past week 60. In particular, the estimated autoregressive serial correlation coefficient approached 1, which implies a unit root problem degrading the model to a random walk as well as an inflation of the estimates' confidence intervals.
+
+Booster shots became available for seniors and persons with underlying health conditions by the end of September 2021 and accessible to adolescents and beyond in December 2021. However, their uptake among fully vaccinated persons accelerated only with the manifestation of the COVID-19 Omicron variant in January 2022. To remain within our operational definition of being fully vaccinated, that is, a person has received both shots of either Pfizer or Moderna or one shot of Johnson & Johnson, the inclusion of boosters would have complicated this study. Furthermore, the inclusion of the brisk surge in the cumulative COVID-19 fatality rate due to the emergence of the Omicron variant (see the weeks 55 to 65 window in the figure below) would have led to a volatile model calibration.
+
+```{r cumFatal, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+plot(weekFatRate~weekFac, data=week, xlab="Week", ylab="COVID-19 Fatality Rate",
+     main="Cumulative Weekly Covid Fatality Rates for TX\n(Feb 2021 to Aug 2022)")
+abline(v=c(15-4,55-4), lty=5, col="red")
+```
+
+## Prospective Risk Factors
+
+Several county characteristics are expected to influence the propensity of the county's population to receive COVID-19 vaccinations to protect themselves against becoming infected by the virus or lessen its detrimental impact on ones health.
+
+-   `CrudeMort`: This is the crude COVID-19 mortality *rate* of a county's population cumulatively measured for each week. A county's population may become more aware of the infection risk and personally affected by the COVID-19 epidemic when the mortality in their county is high. Thus, they may be more inclined to receive the vaccination.
+
+-   `UNINSURED`: This is the *proportion* of a county's non-institutionalized civilian population without health insurance. It may be argued that uninsured persons are disadvantaged and will not be able to afford or access the vaccination. This is partially a misleading argument because COVID-19 vaccinations are offered to everyone free of cost.
+
+-   `HISPORG`: This is the *proportion* of the population who declared that they are of Hispanic origin. In general, the Hispanic population has strong community ties and thus is well-organized. Their awareness of the underlying COVID-19 threat is higher due to its older community members' elevated COVID-19 mortality rates. Hispanics may also experience lower accessibility to the vaccine. Furthermore, Hispanics are predominately employed in high-risk essential professions as well as suffer from more preexisting conditions. It is evident by their higher mortality rate. Consequently, Hispanics are motivated to receive the vaccine. On the other hand, demographically, the Hispanic population is younger and thus less susceptible to dying from COVID-19.
+
+-   `PARTBLACK`: This is the population *proportion* whose race is solely Black and African-Americans or in combination with other races. It is assumed that the historically rooted distrust of the medical establishment in African-American communities leads to lower vaccine acceptance. Furthermore, easy access to the vaccine is not necessarily available in all African-American communities. On the other hand, elevated pre-existing conditions should entice higher vaccination rates. Interestingly, on the county level, a lower COVID-19 mortality rate is observed as the proportion of African-Americans increases.
+
+-   `MEDAGE`: This *metric* variable describes the overall age distribution of a county's population. In combination with elevated pre-existing conditions, older persons are at higher risk of contracting a COVID-19 infection with severe effects on their health. This is the leading reason why older population cohorts were targeted to receive the vaccine first. We expect counties with a more senior age distribution to exhibit higher vaccination rates. On the other hand, older population segments are more conservative-leaning and thus may be reluctant to receive the vaccination.
+
+-   `Democrat`: This is the *proportion* of a county's voters having voted for Biden in the 2020 presidential election. Unfortunately, the COVID-19 pandemic and its potential remedies became unnecessarily politicized in 2020, and facts have had to compete with opposing beliefs. Overall, the acceptance of the novel COVID-19 vaccines can be assumed to be higher in Democrat-leaning population segments. Democratic voting rates over Republican rates have been selected purely for technical reasons because the positively skewed distribution of the Democratic rates was easily converted to symmetry by a log-transformation.
+
+-   `COLLEGEDEG`: This accounts for the *proportion* of a county's population who have obtained at least a college degree. One can assume that better-educated population segments are in a stronger position to process and evaluate contradicting information. Since better-educated persons are more likely to work from home, they may view vaccination as an opportunity to leave their social isolation. Furthermore, educated persons are expected to have better access to the vaccine.
+
+-   `INCOME`: This *metric* variable measures the per capita income in each county. Higher income increases the flexibility to obtain the vaccine. It thus could have a slightly positive impact on the vaccination rates. However, since the vaccine is free, income levels should not substantially influence vaccination rates.
+
+-   `URBRURAL`: This *factor* comprises of five categories: [1] predominately metropolitan counties, [2] predominately suburban counties adjacent to a metropolitan county, [3] counties within the influence sphere of a metropolitan county, [4] counties within a rural region which have a dominate urban center, and [5] solely rural counties. We expect that the access to the vaccine and their acceptance varies by the county's urban/rural status. The included exogenous variables in the model will statistically control for the other differences in the urban/rural hierarchy.
+
+-   `RELIGADHER`: This *ordinal factor* breaks the percentage of a county's population belonging to a religious denomination into four ordinal classes. One can assume that a higher religious adhesion leads to a strong sense of community and, thus, to the desire to protect the community and remain engaged with the community by getting vaccinated. However, *social distancing* guidelines may have disrupted this chain of influence. Another consideration is that some congregations are critical of vaccinations. This study will not follow up on religious adhesion.
+
+-   `RELIGDOMI`: This *factor* captures the dominant religious denomination of a county's population with the five categories: `Baptist`, `Catholic`, `CatholicBaptist`, `MethodistBaptist`, `Eachless25pct`. Different religious denominations approached COVID-19 differently with the Catholic church actively encouraging their parishioners to get vaccinated. This study will not follow up on the dominant religion.
+
+-   `INARMY`: This variable accounts for the *proportion* of the population in active service of the armed forces. The vaccination status of the armed forces is not included in a county's civilian vaccination tally; however, armed forces are included in a county's population at risk. Consequently, counties with a high proportion of army personnel record an incorrectly lower vaccination rate. `INARMY` will account for these ***under-counts*** of the vaccinated and is used as a control variable.
+
+-   `InPrison`: This is a *rate* variable. The economy of several counties in Texas depends predominately on the operation of prisons within their jurisdictions. For instance, almost 24% of the census population residing in Anderson County is incarcerated. If the bulk of the incarcerated population within a county were not yet fully vaccinated then this would lead to a substantial ***under-count*** of the county's vaccinated population.
+
+## Data Organization and Preparation
+
+The univariate distribution of all variables was evaluated, and for positively skewed distributions, a log-transformation was applied. For some variables, which include the value zero in their original support, a small constant was added to the variable before the log-transformation.
+
+The scatterplot matrix below shows the bivariate relationships between the *mid-May 2021* vaccination rates, *mid-May 2021* fatality rates, and the exogenous variables. Interestingly, the bivariate relationship between the median age and the vaccination rate is negative, but it switches to the positive direction after controlling for the voting behavior. Several exogenous variables exhibit pairwise correlation.
+
+```{r evalPairwise, echo=FALSE, fig.width=9.5, fig.height=9.5, fig.align='center'}
+ scatterplotMatrix(~log(FullVacRate)+log(CrudeMort+0.001)+log(HISPORG)+
+                    log(PARTBLACK+0.004)+MEDAGE+log(Democrat)+log(COLLEGEDEG), 
+                    data=county.shp, pch=20, regLine=list(col="green"), 
+                   var.labels = c("Vaccine","Fatality", "Hispanic","PartBlack", "MedianAge","Democrat","College"),
+                   cex.labels = 1.5,
+                    smooth=list(span = 0.35,lty.smooth=1, col.smooth="red", col.var="red"))
+```
+
+Only the vaccination rates and the fatality rates vary by week and county. All the other exogenous variables fluctuate only by county but are constant over time. The lack of inter-week variation in these exogenous variables increases the risk that the confidence intervals of the posterior parameter distributions become inflated. In contrast, posterior variances of the time-varying fatality rates parameter should be more stable. The data were organized in the *long format* by stacking the weekly data for the 254 counties on top of each other for week 15 to week 55. Thus in total $254 \times 41=10,496$ observations were available to perform the data analysis. However, to reiterate most risk factors were time-invariant.
+
+# Model Specification
+
+In general, the COVID-19 vaccination rates follow a nested sequence in which, for instance, the boosted population is a subset of the fully vaccinated population:
+
+$$\mbox{Population at Risk}\supseteq Vac_1\supseteq {Vac_2 \mbox{ (incl. } J\&J)} \supseteq Boost_1\supseteq Boost_2\supseteq Boost_{Omicron}$$ A nested sequences of cumulative rates could be modeled simultaneously by models for ordinal categorical variables (Smithson & Merkle, 2014 or Fox & Weisberg, 2019). As explained in section 2.1, this study only focuses on the fully vaccinated population ($Vac_2$) between weeks 15 to 55, which simplifies the model specification substantially.
+
+## Incidence Versus Prevalence
+
+There are two options to model vaccination acceptance. One can either focus on the vaccination *prevalence* which is expressed by the cumulative vaccination rate up to a given point in time. Alternatively, one uses the vaccination *incidences*, which are the observed event counts within a short window of time. Differentials allow to obtain incidences from the prevalence and *vice versa*, integration derives prevalence from incidences.
+
+Vaccination prevalence can be modeled within the class of logistic regression models assuming, for instance, assuming a binomial distribution with a logit link function. The counties of Texas exhibit substantial *heterogeneity* with respect to their underlying population at risk. Consequently, this induced heteroscedasticity must be handled by weighing each county. However, a high degree of serial dependence is introduced for a temporal sequence of prevalence because later cumulative rates encompass preceding cumulative rates. The resulting serial trend can be captured either with time-specific intercepts and/or offset terms measuring the expected cumulative rate at each point in time. In contrast, the ensuing serial dependence must be controlled by using an autoregressive model specification.
+
+Modeling incidences in a temporal sequence becomes more demanding on both conceptual and technical grounds. Poisson regression can generally model incidence counts, but due to the small population at risk for many counties and the short weekly accounting period, an excessive number of zeros is observed. This requires progressing to a zero-inflated model. Furthermore, a natural offset, which captures the expected baseline risk of each county at any given point in time, is required to obtain meaningful estimates. Usually, these offset terms could be calculated using indirect standardization from dis-aggregated information. However, this itemized information is not directly available. Even if previous challenges are overcome, how would one interpret the results of a temporal count model? For instance, vaccination counts at the roll-out and conclusion of a vaccination campaign will be small and nearly identical but have substantially different meanings.
+
+## Suspected Endogeneity
+
+It is conceivable that endogeneity between vaccination and fatality rates is present. An increase in fatality should raise risk awareness and therefore increase future vaccination rates. On the other hand, an increase in the vaccination rate should reduce future fatality rates. Either direction of the putative stochastic causation is based on lead-lag dependencies, but conterminous dependence can be ruled out.
+
+The lead-lag relationship between the cumulative vaccination and fatality rates and their weekly counts has been evaluated without a meaningful pattern. For instance, there is no evidence that the cumulative vaccination and lagged fatality rates shown in section 2.1 exhibit an expected increase in their correlations (see the figure below). It is, therefore, not necessary to add lagged cumulative fatality rates to the right-hand side of the vaccination model.
+
+```{r corCovidFatal, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+corTab <- matrix(NA, nrow=26, ncol=2)
+for (i in 0:25) {
+  corTab[i+1, 1] <- i
+  corTab[i+1, 2] <- cor(data.table::shift(week$weekVaxRate,0),data.table::shift(week$weekFatRate,i), 
+                        use="complete.obs", method="pearson")
+}
+plot(corTab[,2]~corTab[,1], type="n", main="Delayed Vaccination Response", 
+     xlab="Temporal Lag in Weeks", ylab="Correlation: Vaccination versus Lagged Fatality",
+     ylim=c(0.86,0.89)) 
+lines(spline(corTab[,1],corTab[,2]), lwd=2)
+abline(v=14, lty=5, lwd=2, col="red")
+abline(h=c(min(corTab[,2]),max(corTab[,2])), col="red", lwd=2, lty=2 )
+```
+
+## Fixed and Random Effects
+
+The cumulative disease rates are modeled within the logistic regression framework. The logit $\eta_{it}$ of the expected cumulative rate for region $i$ and week $t$ is expressed by a linear combination of several components:
+
+$$
+\eta_{it}= \mbox{offset}_{it}+ ({\bf X} \cdot {\boldsymbol \beta})_{it} + \nu_i^{iid}+\phi_t^{iid}+\nu_i^{CAR}+\phi_t^{AC}+\psi_{it}^{iid}
+$$
+
+-   The fixed $\mbox{offset}_{it}$, specified as logit, models a fixed base-line level. For this study, natural offsets were not available. Experiments with the average county vaccination rate for each week indicate that a sole week-specific intercept leads to a model which can be more meaningfully interpreted. Thus, an offset was not incorporated into the model.
+
+-   The linear combination of the risk factors $({\bf X} \cdot {\boldsymbol \beta})_{it}$ incorporates the *interaction between the risk variable and the weekly factor*. Thus for each week a risk factor-specific coefficient $\beta$ is available. This allows to trace any changes ovr time in the impact of a risk factor on the vaccination prevalence. The trajectories of these coefficients are a main focus of this study. The risk factors are modeled as fixed effects. Internally a normal distribution with an expectation of zero and an uninformative spread is assumed as the prior distribution for the estimated coefficients ${\boldsymbol \beta}$. 
+
+-   The county-specific random effect $\nu_i^{iid}$ models the deviation of each county from the combined predictions of the other fixed and random components. It is assumed to be independent identically normal distributed with a mean of zero. It ultimately can model the county deviation and allows to identify outlying counties with respect to the vaccination prevalence.
+
+-   The week-specific random effect $\phi_t^{iid}$ captures any deviation from the overall temporal trend for specific weeks. These random effects are expected to be not different from zero because the week-specific fixed effects intercept should capture this variation. It is again assumed to be independently identically normal distributed with a mean of zero.
+
+-   The spatially structured random effect $\nu_i^{CAR}$ captures the spatial autocorrelation among the counties. It is modeled as a conditional autoregressive process ${\boldsymbol \nu}^{CAR} \sim {\cal N}({\boldsymbol 0},\sigma^2 \cdot ({\boldsymbol I}-\lambda\cdot{\boldsymbol C})^{-1})$. The matrix $\boldsymbol C$ is a symmetric spatial link matrix and the coefficient $\lambda < 1$ captures the present degree of spatial autocorrelation among the counties.
+
+-   The temporally structured random effect $\phi_t^{AC}$ models the serial autocorrelation among the weeks. It is specified as a simple autoregressive process with $\phi_t^{AC} = \rho_1 \cdot \phi_{t-1}^{AC}+\epsilon_t$ and $\epsilon_t \sim {\cal N}(0,\sigma^2)$. The parameter $-1 <\rho_1 < 1$ measures the lag 1 serial dependency of the random error term $\phi_t^{AC}$. Note: In case of $\rho_1=1$ the model collapses to a random walk with the serial organization of the data reducing to a first-order difference; this means that instead of prevalence now incidences are modeled and the differences between time-invariant risk factors become constant zero. Higher-order autoregressive processes could be implemented; however, higher order serial lags did not deviate from zero in this study.
+
+-   The space-time random interaction effect $\psi_{it}^{iid}$ can be modeled in different ways based on Kronecker products of the serial and spatial structure matrices. See Blangiardo and Cameletti (2015) pages 240-246. In our model the simplest Type I form of independently identically distributed random effects $\psi_{it}^{iid} \sim {\cal N}(0,\sigma^2)$ was chosen because it led to the best WAIC and kept the model run-time manageable. Having a unique estimate $\psi_{it}^{iid}$ for each space-time combination, however, leads to a model with almost perfectly fitting predicted vaccination prevalence.
+
+# Estimation
+
+All data preparations, visualizations and estimations were performed with ![](RLogo.jpg)'s version 4.2.1 and INLA version 22.10.15-1. INLA stands for the integrated nested Laplace approximation (INLA) of latent Gaussian models. It allows to perform efficient Bayesian estimations of the univariate posterior parameter distributions by avoiding extensive simulation-based estimation approaches of the posterior distribution as found in other Bayesian software. It supports parallel computations using multiple cores, which further saves run time. INLA is highly flexible and covers a wide range of model specifications. Its underlying assumption of modeling Gaussian Markov random fields and being limited to estimate univariate posterior distributions are, in general, not restrictive.
+
+The conditional autoregressive spatial model specification is not directly implemented in INLA. This random effect and other specifications can, however, be implemented and linked to INLA as generic latent effects. We followed here the implementation outlined by Gómez-Rubio (2020), which limits the prior distribution of the spatial autocorrelation coefficient for a scaled spatial link matrix $\boldsymbol C$ to the range $0 \leq \lambda < 1$. Future revisions of this study aim to implement a simultaneous autoregressive spatial process with a prior distribution for the spatial autocorrelation coefficient $\lambda$ covering its full feasible support.
+
+```{r modelSetup, echo=FALSE, include=FALSE, warning=FALSE}
+##
+## Select sequence of weeks and increments 
+## Week05: Feb2022; Week 11: March 2021; week15: mid-March 2021; 
+## Week 19 -> mid May 2021; Week 60 March 2022; and Week 81: July 2022
+##
+vaxDfSelTime <- vaxDf[vaxDf$weeksIdx %in% seq(15,55, by=1), ] # select weeks
+vaxDfSelTime$INCOME <- rep(county.shp$INCOME,length(15:55))   # Add income to the data-frame
+vaxDfSelTime$weekFac <- factor(vaxDfSelTime$weekFac)          # Re-sequence factor levels 
+## Fix excess vaccination counts
+vaxDfSelTime$FullVax <- ifelse(vaxDfSelTime$FullVax > vaxDfSelTime$RISK05PLUS,
+                               vaxDfSelTime$RISK05PLUS, vaxDfSelTime$FullVax)
+
+###################################################
+## Calculate offset term                         ##
+###################################################
+cumTime <- aggregate(FullVax~weekFac, data=vaxDfSelTime, sum)
+names(cumTime) <- c("weekFac", "cumTimeFullVax")
+cumCnty <- aggregate(FullVax~countyIdx, data=vaxDfSelTime, sum)
+names(cumCnty) <- c("countyIdx", "cumCntyFullVax")
+nCount <- sum(cumTime$cumTimeFullVax)
+#sum(cumCnty$cumCntyFullVax)
+vaxDfSelTime <-merge(vaxDfSelTime,cumTime, by="weekFac")
+vaxDfSelTime <-merge(vaxDfSelTime,cumCnty, by="countyIdx")
+
+## Expected counts under independence
+vaxDfSelTime$offSet <- (vaxDfSelTime$cumTimeFullVax * 
+                          vaxDfSelTime$cumCntyFullVax)/nCount
+vaxDfSelTime$offSetRate <- vaxDfSelTime$offSet / vaxDfSelTime$RISK05PLUS
+#scatterplot(offSetRate~I(FullVax/RISK05PLUS), data=vaxDfSelTime)
+offSetRate <- ifelse(vaxDfSelTime$offSetRate>0.999, 0.999, vaxDfSelTime$offSetRate)
+
+###################################################
+## Models with formula space-time interaction    ##
+###################################################
+
+##
+## Setup CAR model
+##
+cntyNB <- poly2nb(county.shp, queen=F)
+B <- as(nb2mat(cntyNB, style="B"), "sparseMatrix")
+rho.max <- max(eigen(B, symmetric=TRUE, only.values = TRUE)$values)
+B <- B / rho.max                  # Re-scale adjacency matrix
+CAR.model <- inla.rgeneric.define(carSA, W = B)
+```
+
+```{r Weeks15to55Type1, warning=FALSE, cache=TRUE}
+##
+## Setup random effects
+##
+prec.prior <- list(prec=list(param=c(0.005,0.005)))
+countyIID <- vaxDfSelTime$countyIdx
+countyCAR <- vaxDfSelTime$countyIdx
+weeksIID <- vaxDfSelTime$weeksIdx
+weeksAR1 <- vaxDfSelTime$weeksIdx
+SpaceTimeIID <- 1:nrow(vaxDfSelTime)
+
+##
+## Interaction between the fixed effects and the weekly factor
+##
+formByWeek <- FullVax~-1+weekFac+(URBRURAL+log(Fatal+0.001)+log(HISPORG)+
+                      log(PARTBLACK+0.004)+MEDAGE+log(DEMOCRAT)+log(COLLEGEDEG)+
+                      log(INPRISON+0.003)+log(INARMY+0.001)+UNINSURED+
+                      log(INCOME)):weekFac
+
+##
+## Space-time CAR model: Type I interaction effect
+##
+vax.model <- inla(update(formByWeek, .~. 
+                         + f(countyIID, model="iid", hyper=prec.prior)
+                         + f(weeksIID, model="iid", hyper=prec.prior)
+                         + f(countyCAR, model=CAR.model)
+                         + f(weeksAR1, model="ar1")
+                         + f(SpaceTimeIID, model="iid")),
+                  data=vaxDfSelTime,
+                  control.fixed = list(prec=0.01),         # stable fixed effects
+                  #offset=log(offSetRate/(1-offSetRate)),
+                  family="binomial", 
+                  Ntrials=RISK05PLUS,                      # pop at risk 5+ yrs
+                  control.predictor = list(link=1),        # logit link
+                  control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE,
+                                         return.marginals.predictor = TRUE),
+                  num.threads = "16")
+```
+
+# Model Discussion
+
+Among the different model specifications Type I to IV for the space-time random interaction effect $\psi_{it}^{iid}$ the Type I model leads to the desired smallest Watanabe-Akaike information criterion (WAIC), while exhausting approximated 50% of the $10,414$ degrees of freedom. Note that the WAIC accounts for the effective number of parameters. As expected, because we estimate one independent random effect $\psi_{it}^{iid}$ for each week and county combination the overall fit of the model is outstanding. In the scatterplot below almost all predicted cumulative vaccination rates match their observed counterpart. A detailed investigation of the few space-time combinations, which deviate pronouncedly from the expected one-to-one relationship, still needs to be performed.
+
+```{r predVaxRate, fig.width=8, fig.height=8, fig.align='center', echo=FALSE}
+obsRate <- vaxDfSelTime$FullVax/vaxDfSelTime$RISK05PLUS
+prdRateMean <- vax.model$summary.fitted.values[,1]
+prdRateMedian <- vax.model$summary.fitted.values[,4]
+prdRateMode <- vax.model$summary.fitted.values[,6]
+prdData <- data.frame(obsRate,prdRateMean,prdRateMedian,prdRateMode)
+ggplot(aes(x=obsRate, y=prdRateMean), data=prdData)+
+  geom_point(pch=16)+
+  geom_abline(slope=1, intercept=0, col="red", lwd=1.2) +
+  scale_x_continuous(breaks=1:10/10) +scale_y_continuous(breaks=1:10/10) +
+  labs(x="Observed Vaccination Rate", y="Type I Model Prediction of Vaccination Rate") +
+  ggtitle("Comparison of the Observed and Predicted Vaccination Rate for a Type I Model") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r vax.model.summary, echo=FALSE, results='hold'}
+marg.prec <- inla.tmarginal(exp, vax.model$marginals.hyperpar$`Theta1 for countyCAR`)
+marg.rho <- inla.tmarginal(function(x) { 1/(1 + exp(-x))},  
+                           vax.model$marginals.hyperpar$`Theta1 for countyCAR`)
+CAR.prec <- inla.zmarginal(marg.prec, silent=TRUE)
+CAR.rho <- inla.zmarginal(marg.rho, silent=TRUE)
+
+modFit <- c( "Deviance Information Criterion (DIC) ...........:",
+             "Watanabe-Akaike information criterion (WAIC) ...:",
+             "Effective number of parameters .................:",
+             "Marginal log-Likelihood ........................:" )
+modFitValues <- c(summary(vax.model)$dic$dic, summary(vax.model)$waic$waic, 
+                  summary(vax.model)$waic$p.eff,summary(vax.model)$mlik[2])
+
+cat("\nModel Summary:\n")
+cat("==============\n")
+cat("\nUsed time:\n")
+summary(vax.model)$cpu.used
+
+cat("\nModel hyperparameters:\n")
+summary(vax.model)$hyperpar[,c(1,6,3,4,5)]
+
+cat("\nDistributional Parameters of CAR-model:\n")
+cbind(Precision=CAR.prec, Lambda=CAR.rho)
+
+cat("\nModel Fit:\n")
+data.frame(Statistic=modFit,Value=modFitValues)
+```
+
+## Random Parameter Distributions
+
+The precision estimates are inversely related to the error variances of each random effect. Thus they express the variability of $\nu_i^{iid}$, $\phi_t^{iid}$, $\nu_i^{CAR}$, $\phi_t^{AC}$ and $\psi_{it}^{iid}$. The larger the precision of each of these random effects becomes, the lower their contribution to the predicted value $\eta_{it}$. All precision parameters are of sizable magnitude; thus none of the random effects dominates the prediction. The precision for the spatially structured random effect is smaller than that of the other precision estimates; thus its contribution to the predicted value $\eta_{it}$ is the highest. In contrast, the precision of the unstructured space-time random interaction effect $\psi_{it}^{iid}$ is the highest; thus it is the least relevant.
+
+## Autocorrelated Random Effects
+
+### Spatial CAR Random Effect $\nu_i^{CAR}$
+
+The spatially structured random effect $\nu_i^{CAR}$ of the vaccination model is strongly positively autocorrelated indicating a high degree of spatial clustering in positive and negative values. However, the estimated distribution of $\lambda$ is close to the upper bound of its feasible range. This requires further investigations and may hint at either a misspecification as CAR model or an inappropriate prior distribution of $\lambda$.
+
+```{r countyCAR1, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+##
+## Distribution of `Lambda for countyCAR`
+##
+plot(marg.rho, type="l", cex.lab=1.3,
+     main=expression(paste("County CAR Main Parameter ", lambda)),
+     xlim=c(0,1),
+     xlab=expression(lambda), 
+     ylab=expression(tilde(p)(paste(lambda, "|", y))))
+abline(h=0, lty=5); abline(v=c(0,1), col="red", lty=3)
+```
+
+As expected, by observing the extreme degree of positive spatial autocorrelation $\lambda=0.98$ in the spatially structured random effect, the spatial constellation of these CAR random effects exhibits a strong degree of clustering in either the negative or positive values. This is high degree of autocorrelation supported by the spatial randomization test. However, in West Texas these spatially structured random effects are composed of spatial outliers. 
+
+```{r countyCAR2, echo=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+county.link <- poly2nb(county.shp, queen=F) # Generate neighbors links
+temp <- lm(vax.model$summary.random$countyCAR$mean~1)
+locMIStat <- localmoran.exact(temp, alternative="less", nb=county.link, style="W")
+
+locMI <- vector(mode= "double", length = 254)
+cumDist <- vector(mode= "double", length = 254)
+for (i in 1:254){
+  locMI[i] <- locMIStat[[i]]$statistic
+  cumDist[i] <- locMIStat[[i]]$p.value
+}
+
+mapProbsAdd <- function(var.prob, shape, leg.title=expression(Pr(I[i] <= I[i]^"obs" , H[1])),  
+                        legend.pos="bottomright", legend.cex=1, symbol.cex=1) {
+  require(spdep); require(classInt); require(maptools)
+  prob.breaks <- c(0.00,0.025,0.05,0.50,0.95,0.975,1.00)
+  prob.cex <- c(1.2,0.9,0.5,0.5,0.9,1.2)*symbol.cex
+  prob.col <- rev(c("#D53E4F","#FC8D59","#FEE08B","#C6DBEF","#6BAED6","#3288BD"))
+  prob.shape <- c(25,25,25,24,24,24)
+  
+  cnt <- coordinates(shape) 
+  
+  sym.cex <- prob.cex[findInterval(var.prob,prob.breaks,rightmost.closed=T)]
+  sym.col <- prob.col[findInterval(var.prob,prob.breaks,rightmost.closed=T)]
+  sym.shape <- prob.shape[findInterval(var.prob,prob.breaks,rightmost.closed=T)]
+  
+  points(cnt, pch=sym.shape, col=grey(0.7), bg=sym.col, cex=sym.cex)
+  
+  legend(legend.pos, legend= leglabs(prob.breaks), cex = legend.cex, 
+         pch=prob.shape, pt.bg=prob.col, pt.cex=prob.cex, 
+         col=grey(0.7), bty="n", title=leg.title)
+  box()
+} #end::mapProbs  
+
+##
+## Spatial CAR Random Effect of County Variation
+##
+tab <- vax.model$summary.random$countyCAR
+county.bbox <- bbox(county.shp)             # county bounding box for map region
+plot(neig.shp, axes=T, col=grey(0.9),  
+     border="white", bg="lightblue",
+     xlim=county.bbox[1,], ylim=county.bbox[2,])        
+
+mapBiPolar(tab$mean, county.shp, 
+           map.title =expression(paste("County Spatial Structured CAR random Effect with ", lambda == 0.98)),
+           legend.title="CAR", legend.cex=0.9, add=T)
+mapProbsAdd(cumDist, county.shp, leg.title=expression(Pr(I[i] <= I[i]^"obs",H[0])),  
+                        legend.pos="bottomright", legend.cex=0.9, symbol.cex=1.6)
+plot(interState.shp, col="tomato4", lwd=2, add=T)
+
+moran.mc(tab$mean, nb2listw(county.link, style="C"), nsim=99999, alternative = "less") 
+```
+
+### Temporal AR Random Effect $\phi_t^{AC}$
+
+The temporarily structured random effect $\phi_t^{AC}$ shows a high degree of persistence over time. It accounts well for the serial autocorrelation of the sequence of the cumulative vaccination rates. Overall, the distribution of $\rho$ is well behaved.
+
+```{r weeksAR1, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+##
+## Distribution of `PACF1 for weeksAR1`
+##
+plot(vax.model$marginals.hyperpar$`Rho for weeksAR1`, type="l", cex.lab=1.3,
+     main=expression(paste("Weekly AR(1) Main Parameter ", rho[1])),
+     xlim=c(-1,1),
+     xlab=expression(rho[1]), 
+     ylab=expression(tilde(p)(paste(rho[1], "|", y))))
+abline(h=0, lty=5); abline(v=c(0,1), col="red", lty=3)
+```
+
+## IID Random Effects
+### Spatial IID Random Effect $\nu_i^{iid}$
+
+The unstructured county-specific random effect $\nu_i^{iid}$ measures the deviation of each county from the expected value of zero after the global spatial autocorrelation has been controlled for with the random effect $\nu_i^{CAR}$. It thus allows to perform a subsequent a spatial outlier analysis.
+
+```{r countyIID1, echo=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+##
+## Random Effect County Variation
+##
+tab <- vax.model$summary.random$countyIID
+names(tab)[c(4, 6)] <- c("IClower", "ICupper")
+
+ggplot(data = tab, aes(x = mean, y = ID)) +
+  geom_point() +  ylim(1, 254) + xlab(expression(nu[i]^{iid})) + ylab ("countyIdx") +
+  geom_errorbarh(aes(xmin = IClower, xmax = ICupper) ) +
+  geom_vline (xintercept = 0, linetype = 2) +
+  ggtitle("County IID random Effect") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+In total 4 counties exhibit a significantly higher random effect $\nu_i^{iid}$. Not surprisingly 3 of these 4 counties are along the Mexican border. Most counties along the Mexican border were early adopters of the COVID-19 vaccines and achieved herd immunity early on.
+
+```{r countyIID2, echo=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+## Extreme counties
+extremeCountyIID <- rep("neutral", 254)
+extremeCountyIID <- ifelse(tab$IClower > 0, "positive", extremeCountyIID)
+extremeCountyIID <- ifelse(tab$ICupper < 0, "negative", extremeCountyIID)
+extremeCountyIID <- as.factor(extremeCountyIID)
+
+county.bbox <- bbox(county.shp)             # county bounding box for map region
+plot(neig.shp, axes=T, col=grey(0.9),  
+     border="white", bg="lightblue",
+     xlim=county.bbox[1,], ylim=county.bbox[2,])        
+
+mapColorQual(extremeCountyIID, county.shp, 
+           map.title ="Outlying County IID Random Effect",
+           legend.title="Outlier IID", legend.cex=0.9, add=T)
+
+plot(interState.shp, col="tomato4", lwd=2, add=T)
+
+```
+
+```{r countyIID3, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+## Map Random Effect
+# hist(tab$mean, freq=FALSE, breaks=18, 
+#      main="Spatial Pattern of County IID Random Effect",
+#      xlab=expression(mu[i]^{iid}))
+# lines(density(tab$mean), col="red")
+```
+
+The overall spatial pattern of $\nu_i^{iid}$ is free of global autocorrelation (see the Moran's $I$ randomization test below). This indicates that the spatially structured random effect $\nu_i^{CAR}$ absorbs the global spatial autocorrelation in the vaccination rates well.
+
+```{r countyIID4, echo=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+county.link <- poly2nb(county.shp, queen=F) # Generate neighbors links
+moran.mc(tab$mean, nb2listw(county.link, style="C"), nsim=99999, alternative = "less") 
+```
+
+Despite the global autocorrelation in the $\nu_i^{iid}$ being insignificant, it is worthwhile to investigate the observed map pattern for any *local clusters* and *spatial outliers*. There are 7 spatially outlying counties predominately located in West Texas along the Mexican border and 5 spatially clustering counties can be found mostly in the Pan-Handle. Thus, as expected, 5% of the counties in Texas are spatially outstanding.
+
+```{r countyIID5, echo=FALSE, results=FALSE, warning=FALSE, message=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+temp <- lm(tab$mean~1)
+locMIStat <- localmoran.exact(temp, alternative="less", nb=county.link, style="W")
+
+locMI <- vector(mode= "double", length = 254)
+cumDist <- vector(mode= "double", length = 254)
+for (i in 1:254){
+  locMI[i] <- locMIStat[[i]]$statistic
+  cumDist[i] <- locMIStat[[i]]$p.value
+}
+
+mapProbsAdd <- function(var.prob, shape, leg.title=expression(Pr(I[i] <= I[i]^"obs" , H[0])),  
+                        legend.pos="bottomright", legend.cex=1, symbol.cex=1) {
+  require(spdep); require(classInt); require(maptools)
+  prob.breaks <- c(0.00,0.025,0.05,0.50,0.95,0.975,1.00)
+  prob.cex <- c(1.2,0.9,0.5,0.5,0.9,1.2)*symbol.cex
+  prob.col <- rev(c("#D53E4F","#FC8D59","#FEE08B","#C6DBEF","#6BAED6","#3288BD"))
+  prob.shape <- c(25,25,25,24,24,24)
+  
+  cnt <- coordinates(shape) 
+  
+  sym.cex <- prob.cex[findInterval(var.prob,prob.breaks,rightmost.closed=T)]
+  sym.col <- prob.col[findInterval(var.prob,prob.breaks,rightmost.closed=T)]
+  sym.shape <- prob.shape[findInterval(var.prob,prob.breaks,rightmost.closed=T)]
+  
+  points(cnt, pch=sym.shape, col=grey(0.7), bg=sym.col, cex=sym.cex)
+  
+  legend(legend.pos, legend= leglabs(prob.breaks), cex = legend.cex, 
+         pch=prob.shape, pt.bg=prob.col, pt.cex=prob.cex, 
+         col=grey(0.7), bty="n", title=leg.title)
+  box()
+} #end::mapProbs  
+
+county.bbox <- bbox(county.shp)             # county bounding box for map region
+plot(neig.shp, axes=T, col=grey(0.9),  
+     border="white", bg="lightblue",
+     xlim=county.bbox[1,], ylim=county.bbox[2,])        
+
+mapBiPolar(tab$mean, county.shp, 
+           map.title ="County IID Random Effect with Local Moran's I",
+           legend.title="IID", legend.cex=0.9, add=T)
+
+mapProbsAdd(cumDist, county.shp, leg.title=expression(Pr(I[i] <= I[i]^"obs",H[0])),  
+                        legend.pos="bottomright", legend.cex=0.9, symbol.cex=1.6)
+plot(interState.shp, col="tomato4", lwd=2, add=T)
+```
+
+### Temporal IID Random Effect $\phi_t^{iid}$
+
+The week-specific random effect $\phi_t^{iid}$ does not deviate from the expected value of zero. Thus no week is a temporal outlier. However, there is noticeable serial autocorrelation in $\phi_t^{iid}$. This indicates that the temporarily structured random effect $\phi_t^{AC}$ is not fully accounting for the serial autocorrelation in the cumulative vaccination rates. Experiments with higher-order autoregressive processes $AR(p)$ with $p>1$ did not cure this residual serial autocorrelation and their associated autocorrelation coefficients did not differ from zero.
+
+```{r weeksIID1, echo=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+tab <- vax.model$summary.random$weeksIID
+names(tab)[c(4, 6)] <- c("IClower", "ICupper")
+
+ggplot(data = tab, aes(x = mean, y = ID)) +
+  geom_point() +  ylim(15, 55) + xlab(expression(phi[t]^{iid})) + ylab ("weeksIdx") +
+  geom_errorbarh(aes(xmin = IClower, xmax = ICupper) ) +
+  geom_vline (xintercept = 0, linetype = 2) +
+  ggtitle("Weekly IID random Effect") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r weeksIID2, echo=FALSE, fig.width=8, fig.height=6, fig.align='center'}
+## Test for Serial AC in IID Time Variation
+acf(tab$mean, lag.max=20, main="Serial AC in IID Time Variation")
+pacf(tab$mean, lag.max=20, main="Partial Serial AC in IID Time Variation")
+```
+
+## Fixed Effects Trajectories
+
+The interpretation of the temporal pattern in the estimated regression coefficients of the fixed effects should not only be guided by the significance of the individual time-specific coefficients but more collectively by the complete trajectory over time. Thus, it is also worthwhile discussing meaningful trajectories despite their lack of significant deviations from the indeterminate value of zero. Furthermore, due to the high degree of spatial and temporal autocorrelation the credibility intervals appear to be slightly inflated.
+
+### Week Specific Intercept
+
+Starting from mid-April (week15), the cumulative weekly vaccine rates increase over time. This is echoed by the increasing trajectory of the week specific intercepts, which model the variation around the time-space average vaccination rate. Thus these weekly intercepts capture the overall trend in the vaccination rates. They are more flexible than just having a fixed offset for each week.
+
+```{r fixedEffects1, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+parms <- vax.model$summary.fixed[,3:5]
+names(parms) <- c("lowBound","med","hiBound")
+weeks <- 15:55
+iSteps <- length(weeks)
+## Intercept
+i <- 0
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Intercept") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Time-specific Intercept") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))   
+plot(p)
+  
+```
+
+### Week Specific Urban/Rural Factor
+
+The map below shows the classification of the 254 Texas counties as solely rural, rural counties with a dominant urban center, metropolitan fringe counties, metropolitan suburban counties and metropolitan core counties. The solely rural category provides the reference level against which all other factor level are compared. These all experience higher vaccination rates than the solely rural counties in the order [1] rural with a dominant urban center, [2] metropolitan fringe counties, [3] metropolitan core counties and [4] suburban counties. Moreover, solely rural counties are further left behind over time. It is of note here that *ceteris paribus* suburban counties substantially outperform their metropolitan core counterparts despite having better accessibility.
+
+```{r fixedEffects2, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+plot(neig.shp, axes=T, col=grey(0.9),
+     border="white",  bg="lightblue",
+     xlim=county.bbox[1,], ylim=county.bbox[2,])
+
+mapColorQual(county.shp$URBRURAL, county.shp,
+             map.title="County's Urban-Rural Status", legend.cex=0.9,
+             legend.title="Urban-Rural",add.to.map=T) 
+
+plot(interState.shp, col="tomato4", lwd=2, add=T)  
+
+## rural.urban
+i <- 1
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.5,0.8) +
+  xlab("rural.urban") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Urban in Rural Counties Parameters of Factor URBRURAL") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p)
+
+## metro.fringe
+i <- 2
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.5,0.8) +
+  xlab("metro.fringe") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Fringe Metropolitan Parameters of Factor URBRURAL") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p)
+
+## metro.core
+i <- 3
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.5,0.8) +
+  xlab("metro.core") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Core Metropolitan Parameters of Factor URBRURAL") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+
+## metro.suburb
+i <- 4
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlim(-0.5,0.8) +
+  xlab("metro.suburb") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Suburban Metropolitan Parameters of Factor URBRURAL") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+  
+```
+
+### Week Specific Fatality Rate
+
+A county's fatality rate initially has a strong positive impact on the vaccination rate. This indicates that the COVID-19 epidemic at first traumatized people leading them to seek protection by becoming vaccinated. While still having a significant postive impact by week 30 people seem to become more in-sensitized towards the threat of becoming infected.
+
+```{r fixedEffects3, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Fatality Rate
+i <- 5
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Fatality Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Fatality Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific Hispanic Rate
+
+Throughout the study period Hispanics consistently exhibit a high positive vaccination rate. This indicates that cultural factors promote the vaccine acceptance in Hispanic population segments.
+
+```{r fixedEffects4, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Hispanic Rate
+i <- 6
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Hispanic Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Hispanic Origin Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p)
+```
+
+### Week Specific Black Rate
+
+In contrast to the Hispanic population African Americans display a below average and dropping vaccination rate over time. Again underlying cultural factors are suspected to be responsible for the negative attitude toward vaccination but accessibility constraints cannot be ruled out.
+
+```{r fixedEffects5, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Part Black Rate
+i <- 7
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Part Black Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Part Black Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific Median Age
+
+Median age matters throughout the study period. Due to the higher infection risk in older populations segments their vaccination rate is above average. This age effect, however, slowly tempers down. This may be due to a vaccination saturation of older population segments.
+
+```{r fixedEffects6, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Median Age
+i <- 8
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Median Age") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Median Age Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific Democratic Vote Rate
+
+The stronger a county's Democratic affiliation is, the higher its vaccination rate becomes. In other words, persons with a strong conservative attachment disapprove of becoming vaccinated. This is a reflection of the current political dispute not only in Texas but in the whole of The United States. According to the increasing trajectory over time, this political polarization between liberal and conservatives appears to increase throughout the study period.
+
+```{r fixedEffects7, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Democratic Votes
+i <- 9
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Democratic Vote Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific Vote Demoncratic Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific College Degree Rate
+
+As expected, throughout the study period the higher the educational attainment in a county becomes the higher the acceptance of becoming vaccinated will be.
+
+```{r fixedEffects8, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## College Degree Rate
+i <- 10
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("College Degree Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific College Degree Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific In-Prison Rate
+
+The trajectory of the in-prison rate shows that until June 2021 (week 20) the vaccination was below average but past week 20 turned to become positive. The implication of this pattern is that initially the incarcerated population in prison-heavy counties have not had access to COVID-19 vaccines. Later-on the prison population became fully vaccinated, which pushed the county's vaccination rates above average.
+
+```{r fixedEffects9, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## In-Prison Rate
+i <- 11
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("In-Prison Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific In-Prison Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific In-Army Rate
+
+Counties with large installations of the armed forces consistently experience a below average *observed* vaccination rate. This *under-count* is due to the fact that vaccinated army personnel is not is included in the civilian vaccination statistic but included in the population at risk.
+
+```{r fixedEffects10, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## In-Army Rate
+i <- 12
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("In-Army Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Week Specific In-Army Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p) 
+```
+
+### Week Specific Uninsured Rate
+
+Even though COVID-19 vaccines are freely administered to all population segments, it is still worthwhile to investigate if the health insurance status has an impact on the county's vaccination rates. Initially it does not influence the vaccination rates, however, from 2022 onward a slight increase in the vaccination rates is observed.
+
+```{r fixedEffects11, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Uninsured
+i <- 13
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Uninsured Rate") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Time-specific Uninsured Rate Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p)
+```
+
+### Week Specific Per-Capita Income
+
+The per-capita income of a county's population should not have an influence on the vaccination rates because of the free vaccine distribution. According to the results, however, for the first 6 weeks *ceteris paribus* income seems to have a positive impact on the vaccination rates and then became neutral. This may indicate that for the first few weeks vaccine access may have been connected to a county's wealth. The Texas government announced that by May 2021 COVID-19 vaccines were in sufficient supply (*reference missing*) .
+
+```{r fixedEffects12, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, warning=FALSE, message=FALSE}
+## Income
+i <- 14
+p <- ggplot(data = parms[(i*iSteps+1):((i+1)*iSteps),], aes(x = med, y = weeks)) +
+  geom_point() +  ylim(min(weeks)-2,max(weeks)+2) + xlab("Per Capita Income ") + ylab ("Week") +
+  geom_errorbarh(aes(xmin = lowBound, xmax = hiBound) ) +
+  geom_vline (xintercept = 0, linetype = 2, col="red", lwd=1.2) +
+  ggtitle("Time-specific Per Capita Income Parameters") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(min(weeks),max(weeks),by=5))
+plot(p)
+```
+
+```{r fixedEffects, fig.width=8, fig.height=8, fig.align='center', echo=FALSE, message=FALSE}
+##
+## Trajectories of Fixed Effects
+##
+# parms <- vax.model$summary.fixed[,3:5]
+# names(parms) <- c("lowBound","med","hiBound")
+# plotFixParmsTrajectory(parms, weeks=15:55)
+```
+
+# Conclusions
+
+This analysis tells a powerful story of the COVID-19 vaccine acceptance and hesitancy of Texans with its spatial disparities and temporal changes over 41 weeks in 2021 and 2022. In particular, political orientation is an increasingly strong distinguishing factor; there is a stark difference in the vaccine acceptance between Afro-Americans and Hispanics; the COVID-19 risk perception is shrinking as indicated by trajectories of the median age and fatality rates; higher educated population segments make better informed decisions; and finally suburbanites have a higher propensity to become vaccinated. This does not mean that the search for relevant additional risk factors is completed. For instance, indicator variables could capture policy changes. A major caveats of these findings, however, is that their generalization to individual level behavior is not unambiguously possible due to potential ecological fallacies.
+
+Further research is needed looking beyond January 2022 (week 55). Can the ramifications of the somewhat stationary cumulative vaccination rates be overcome? This would help understanding the vaccination behavior in Spring, Summer and Fall of 2022. Furthermore, vaccine boosters and the varying number of eligible population age groups are so far ignored. A detailed sensitivity analysis with respect to the selection of the parameter's prior distributions and specification of the spatial process still needs to be done.
+
+This analysis in the Bayesian domain would not have been possible without INLA, which allows researchers to experiment with different model specifications in a timely manner. Simulation based Bayesian analyses simply consume too much computing time. The flexibility of INLA would also allow to explore alternative model classes potentially relevant for our research objectives. For instance, it is possible to look at different levels of vaccination with a multinomial logistic model or even from a survival analysis perspective. These extensions again allow to included serial and spatial autocorrelation as random effects into the model specifications.
+
+# References {.unnumbered}
+
+-   Fox, John and Sanford Weisberg (2019). An R Companion to Applied Regression. 3^rd^ edition. Sage
+
+-   Smithson, Michael and Edgar C. Merkle (2014). Generalized Linear Models for Categorical and Continuous Limited Dependent Variables. CRC Press
+
+-   Blangiardo, Marta and Michela Cameletti (2015). Spatial and Spatio-temporal Bayesian Models with R-INLA. Wiley
+
+-   Lawson, Andrew B, 2013. Bayesian Disease Mapping. Hierarchical Modeling in Spatial Epidemiology. 2^nd^ edition. CRC Press
+
+-   Gómez-Rubio, Virgilio (2020). Bayesian Inference with INLA. CPC Press
+
+-   El-Mohandes, A., White, T. M., Wyka, K., Rauh, L., Rabin, K., Kimball, S. H., and Lazarus, J. V. (2021). COVID-19 vaccine acceptance among adults in four major US metropolitan areas and nationwide. Scientific Reports, 11(1), 1-12.
+
+-   Arce, J. S. S., Warren, S. S., Meriggi, N. F., Scacco, A., McMurry, N., Voors, M., and Mobarak, A. M. (2021). COVID-19 vaccine acceptance and hesitancy in low and middle income countries, and implications for messaging. medRxiv.
+
+-   Wong, M. C., Wong, E. L., Huang, J., Cheung, A. W., Law, K., Chong, M. K., and Chan, P. K. (2021). Acceptance of the COVID-19 vaccine based on the health belief model: A population-based survey in Hong Kong. Vaccine, 39(7), 1148-1156.
+
+-   Campochiaro, C., Trignani, G., Tomelleri, A., Cascinu, S., and Dagna, L. (2021). Potential acceptance of COVID-19 vaccine in rheumatological patients: a monocentric comparative survey. Annals of the Rheumatic Diseases, 80(6), 816-817.
+
+-   Gadoth, A., Halbrook, M., Martin-Blais, R., Gray, A., Tobin, N. H., Ferbas, K. G., and Rimoin, A. W. (2021). Cross-sectional assessment of COVID-19 vaccine acceptance among health care workers in Los Angeles. Annals of Internal Medicine.
+
+-   Mollalo, A., and Tatar, M. (2021). Spatial Modeling of COVID-19 Vaccine Hesitancy in the United States. International Journal of Environmental Research and Public Health, 18(18), 9488.
+
+-   Liu, R., and Li, G. M. (2021). Hesitancy in the time of coronavirus: Temporal, spatial, and socio-demographic variations in COVID-19 vaccine hesitancy. SSM-Population Health, 15, 100896.
+
+-   Martinez-Catsam A. (2021). Coronavirus (COVID-19) Pandemic in Texas 2020-2021. pp 564-573. Texas Almanac 2022-2023, 71st edition
+
+-   Gowda, C., & Dempsey, A. F. (2013). The rise (and fall?) of parental vaccine hesitancy. Human Vaccines & Immunotherapeutics, 9(8), 1755--1762. <https://doi.org/10.4161/hv.25085>
+
+-   Larson, H. J., Jarrett, C., Eckersberger, E., Smith, D. M. D., & Paterson, P. (2014). Understanding vaccine hesitancy around vaccines and vaccination from a global perspective: A systematic review of published literature, 2007-2012. In Vaccine (Vol. 32, Issue 19, pp. 2150--2159). Elsevier BV. <https://doi.org/10.1016/j.vaccine.2014.01.081>
+
+-   Marti, M., de Cola, M., MacDonald, N. E., Dumolard, L., & Duclos, P. (2017). Assessments of global drivers of vaccine hesitancy in 2014 - Looking beyond safety concerns. PLoS ONE, 12(3). <https://doi.org/10.1371/journal.pone.0172310>
+
+-   Mollalo, A., & Tatar, M. (2021). Spatial modeling of covid-19 vaccine hesitancy in the united states. International Journal of Environmental Research and Public Health, 18(18). <https://doi.org/10.3390/ijerph18189488>
+
+-   Quinn, S. C., Jamison, A. M., An, J., Hancock, G. R., & Freimuth, V. S. (2019). Measuring vaccine hesitancy, confidence, trust and flu vaccine uptake: Results of a national survey of White and African American adults. Vaccine, 37(9), 1168--1173. <https://doi.org/10.1016/j.vaccine.2019.01.033>
+
+-   Siddiqui, M., Salmon, D. A., & Omer, S. B. (2013). Epidemiology of vaccine hesitancy in the United States. In Human Vaccines and Immunotherapeutics (Vol. 9, Issue 12, pp. 2643--2648). <https://doi.org/10.4161/hv.27243>
+
+-   Soares, P., Rocha, J. V., Moniz, M., Gama, A., Laires, P. A., Pedro, A. R., Dias, S., Leite, A., & Nunes, C. (2021). Factors associated with COVID-19 vaccine hesitancy. Vaccines, 9(3). <https://doi.org/10.3390/vaccines9030300>
+
+-   Thomson, A., Robinson, K., & Vallée-Tourangeau, G. (2016). The 5As: A practical taxonomy for the determinants of vaccine uptake. In Vaccine (Vol. 34, Issue 8, pp. 1018--1024). Elsevier Ltd. <https://doi.org/10.1016/j.vaccine.2015.11.065>
